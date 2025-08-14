@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>見え方体験シミュレーター（P/D/T切替・色の見え方 仕上げ版）</title>
+<style>
+  :root{ --fg:#111; --bg:#fff; --acc:#0059ff; --card:#f6f7f9; --border:#dcdfe4; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;color:var(--fg);background:var(--bg);line-height:1.6}
+  header{padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2}
+  h1{margin:0;font-size:1.2rem}
+  main{max-width:960px;margin:0 auto;padding:18px}
+  .wrap{display:grid;gap:16px;grid-template-columns:1fr}
+  @media (min-width:900px){.wrap{grid-template-columns:300px 1fr}}
+
+  /* Tabs */
+  .tabs[role="tablist"]{display:flex;gap:8px;flex-wrap:wrap}
+  .tab-btn{appearance:none;border:1px solid var(--border);background:#fff;color:var(--fg);
+    border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer}
+  .tab-btn[aria-selected="true"]{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .panel[hidden]{display:none}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px}
+  .control{margin:10px 0}
+  label{display:block;font-size:.95rem;margin-bottom:4px}
+  input[type="range"], select, button {width:100%}
+  input[type="checkbox"]{width:auto}
+  .row{display:grid;grid-template-columns:1fr 80px;gap:10px;align-items:center}
+  .note{font-size:.88rem;color:#555}
+  .btn{appearance:none;border:1px solid var(--border);background:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+  .btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+
+  /* Color mode radios */
+  .cvd-group{display:flex;gap:8px;flex-wrap:wrap}
+  .cvd-radio{
+    width:auto; min-width:3ch; padding:8px 10px; border:1px solid var(--border); border-radius:10px;
+    background:#fff; cursor:pointer; font:inherit
+  }
+  .cvd-radio[aria-checked="true"]{background:var(--acc);color:#fff;border-color:var(--acc)}
+  .cvd-radio:focus{outline:2px solid #0003; outline-offset:2px}
+
+  /* Surface */
+  .surface{
+    position:relative; isolation:isolate; overflow:hidden;
+    border:1px solid var(--border); border-radius:14px; background:#fff; padding:18px; min-height:380px;
+  }
+  .surface-inner{ position:relative; z-index:1; transform:translateZ(0) } /* blur等はJS管理 */
+
+  /* Sample UI */
+  .grid{display:grid;gap:12px}
+  .grid-2{grid-template-columns:1fr 1fr}
+  @media (max-width:720px){.grid-2{grid-template-columns:1fr}}
+  input[type="text"],input[type="search"],select{border:1px solid var(--border);border-radius:10px;padding:10px 12px;font:inherit}
+  table{width:100%;border-collapse:collapse;font-size:.95rem}
+  th,td{border:1px solid var(--border);padding:8px;text-align:left}
+  th{background:#f2f3f5}
+
+  /* Overlays */
+  .overlay{position:absolute; inset:0; z-index:3; pointer-events:none}
+  .glare{
+    background:
+      radial-gradient(circle at var(--gx,50%) var(--gy,10%), rgba(255,255,255,var(--galpha,0.0)) 0%, rgba(255,255,255,0) 40%),
+      linear-gradient(to bottom, rgba(255,255,255,var(--gveil,0)) 0%, rgba(255,255,255,var(--gveil,0)) 100%);
+    mix-blend-mode:screen;
+  }
+  .scotoma{
+    background:radial-gradient(circle at var(--sx,50%) var(--sy,50%), rgba(0,0,0,var(--salpha,0.85)) 0, rgba(0,0,0,0.85) var(--sr,80px), rgba(0,0,0,0) calc(var(--sr,80px) + 2px));
+    mix-blend-mode:multiply;
+  }
+
+  /* Motion */
+  @keyframes wobbleY { 0%{ transform:translateY(-0.8px)} 100%{ transform:translateY(0.8px)} }
+  .nystagmus .surface-inner{animation:wobbleY .08s ease-in-out infinite alternate}
+  @media (prefers-reduced-motion: reduce){ .nystagmus .surface-inner{animation:none} }
+
+  /* Color swatches */
+  .swatches{display:flex;gap:8px;flex-wrap:wrap}
+  .sw{width:56px;height:56px;border-radius:10px;border:1px solid #0001;display:flex;align-items:center;justify-content:center;font-size:12px;color:#0008}
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .compare .box{border:1px dashed var(--border);border-radius:12px;padding:10px}
+  .compare h4{margin:0 0 6px;font-size:.95rem}
+  .mini{font-size:.85rem;color:#444;margin-top:6px}
+</style>
+</head>
+<body>
+<header><h1>見え方体験シミュレーター（視覚）</h1></header>
+
+<main>
+  <p class="note">目的：見え方の違いを疑似体験し、配慮設計の学びにつなげる（医療的再現ではなく参考体験）。</p>
+
+  <div class="wrap">
+    <!-- Controls -->
+    <section class="card" aria-labelledby="controls-title">
+      <h2 id="controls-title" style="margin:0 0 8px;font-size:1.05rem;">モード / 強さ</h2>
+
+      <div class="tabs" role="tablist" aria-label="体験モード">
+        <button class="tab-btn" role="tab" id="t-normal"  aria-selected="true"  aria-controls="p-normal">通常</button>
+        <button class="tab-btn" role="tab" id="t-blur"    aria-selected="false" aria-controls="p-blur">ぼやけ・低コントラスト</button>
+        <button class="tab-btn" role="tab" id="t-tunnel"  aria-selected="false" aria-controls="p-tunnel">トンネル視</button>
+        <button class="tab-btn" role="tab" id="t-glare"   aria-selected="false" aria-controls="p-glare">眩光</button>
+        <button class="tab-btn" role="tab" id="t-color"   aria-selected="false" aria-controls="p-color">色の見え方</button>
+        <button class="tab-btn" role="tab" id="t-nyst"    aria-selected="false" aria-controls="p-nyst">微振動</button>
+      </div>
+
+      <!-- Panels -->
+      <div id="p-normal" class="panel" role="tabpanel" aria-labelledby="t-normal" aria-hidden="false">
+        <p class="note">通常表示。</p>
+      </div>
+
+      <div id="p-blur" class="panel" role="tabpanel" aria-labelledby="t-blur" aria-hidden="true" hidden>
+        <div class="control row"><label for="blur">ぼかし（px）</label><input id="blur" type="range" min="0" max="6" step="0.1" value="2" /></div>
+        <div class="control row"><label for="contrast">コントラスト</label><input id="contrast" type="range" min="50" max="120" value="85" /></div>
+        <div class="control row"><label for="bright">明るさ</label><input id="bright" type="range" min="80" max="120" value="100" /></div>
+      </div>
+
+      <div id="p-tunnel" class="panel" role="tabpanel" aria-labelledby="t-tunnel" aria-hidden="true" hidden>
+        <div class="control row"><label for="radius">視野半径（px）</label><input id="radius" type="range" min="40" max="300" value="110" /></div>
+        <div class="control row"><label for="edge">縁のぼかし（幅）</label><input id="edge" type="range" min="0" max="200" value="120" /></div>
+        <p class="note">ポインタ/指で視野中心を移動（固定チェックで中央固定）。</p>
+        <div class="control"><label><input id="fix-tunnel" type="checkbox" /> 視点固定（中央）</label></div>
+      </div>
+
+      <div id="p-glare" class="panel" role="tabpanel" aria-labelledby="t-glare" aria-hidden="true" hidden>
+        <div class="control row"><label for="gveil">ベール輝度</label><input id="gveil" type="range" min="0" max="60" value="20" /></div>
+        <div class="control row"><label for="galpha">中心ハレーション</label><input id="galpha" type="range" min="0" max="80" value="30" /></div>
+        <div class="control"><label><input id="fix-glare" type="checkbox" /> 光源固定（上部）</label></div>
+      </div>
+
+      <div id="p-color" class="panel" role="tabpanel" aria-labelledby="t-color" aria-hidden="true" hidden>
+        <div class="control">
+          <label id="cvd-label">色の見え方（簡易）</label>
+          <div class="cvd-group" role="radiogroup" aria-labelledby="cvd-label">
+            <!-- ★ radiogroup化（ロービングtabindex） -->
+            <button class="cvd-radio" id="cvdbtn-none"   type="button" role="radio" aria-checked="true"  tabindex="0">標準</button>
+            <button class="cvd-radio" id="cvd-protan" type="button" role="radio" aria-checked="false" tabindex="-1" title="P: 赤の感度低下">P</button>
+            <button class="cvd-radio" id="cvd-deutan" type="button" role="radio" aria-checked="false" tabindex="-1" title="D: 緑の感度低下">D</button>
+            <button class="cvd-radio" id="cvd-tritan" type="button" role="radio" aria-checked="false" tabindex="-1" title="T: 青の感度低下">T</button>
+          </div>
+        </div>
+
+        <!-- 比較プレビュー -->
+        <div class="compare" style="margin-top:10px">
+          <div class="box">
+            <h4>通常</h4>
+            <div class="swatches">
+              <div class="sw" style="background:#e53935">赤</div>
+              <div class="sw" style="background:#43a047">緑</div>
+              <div class="sw" style="background:#fdd835">黄</div>
+              <div class="sw" style="background:#c0ca33">黄緑</div>
+              <div class="sw" style="background:#1e88e5">青</div>
+              <div class="sw" style="background:#8e24aa">紫</div>
+            </div>
+            <div class="mini">ペア: <b>赤↔緑</b> / <b>黄↔黄緑</b> / <b>青↔紫</b></div>
+          </div>
+          <div class="box">
+            <h4>シミュレーション</h4>
+            <div class="swatches" id="previewSim"></div>
+            <div class="mini">選択: <span id="cvdTypeLabel">標準</span></div>
+          </div>
+        </div>
+        <p class="note" style="margin-top:8px">※ P/Dでは <b>赤と緑・黄と黄緑</b>、Tでは <b>青と紫</b> が近づいて見えます。</p>
+      </div>
+
+      <div id="p-nyst" class="panel" role="tabpanel" aria-labelledby="t-nyst" aria-hidden="true" hidden>
+        <div class="control"><label><input id="ny-on" type="checkbox" /> 微振動を有効化</label></div>
+      </div>
+
+      <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)">
+      <div class="control"><button id="motion-toggle" class="btn" type="button" aria-pressed="false">動きをすべて停止</button></div>
+    </section>
+
+    <!-- 実際の体験領域 -->
+    <section class="surface" aria-live="polite">
+      <!-- SVG defs：色覚フィルタ -->
+      <svg width="0" height="0" aria-hidden="true" focusable="false">
+        <defs>
+          <filter id="cvd-none"></filter>
+          <!-- P: protan近似 -->
+          <filter id="cvd-prot" color-interpolation-filters="sRGB">
+            <feColorMatrix type="matrix" values="
+              0.567 0.433 0     0 0
+              0.558 0.442 0     0 0
+              0     0.242 0.758 0 0
+              0     0     0     1 0"/>
+          </filter>
+          <!-- D: deutan近似 -->
+          <filter id="cvd-deut" color-interpolation-filters="sRGB">
+            <feColorMatrix type="matrix" values="
+              0.625 0.375 0     0 0
+              0.700 0.300 0     0 0
+              0     0.300 0.700 0 0
+              0     0     0     1 0"/>
+          </filter>
+          <!-- T: tritan近似 -->
+          <filter id="cvd-trit" color-interpolation-filters="sRGB">
+            <feColorMatrix type="matrix" values="
+              0.950 0.050 0     0 0
+              0     0.433 0.567 0 0
+              0     0.475 0.525 0 0
+              0     0     0     1 0"/>
+          </filter>
+        </defs>
+      </svg>
+
+      <!-- Overlays（最前面） -->
+      <!-- ★ トンネル視：CSSマスク（縁ぼかし可変） -->
+      <div id="maskLayer" class="overlay" style="display:none;">
+        <div id="tunnelMaskBox"
+             style="position:absolute;inset:0;background:rgba(0,0,0,0.92);
+               -webkit-mask: radial-gradient(circle at var(--tx,50%) var(--ty,50%),
+                              transparent 0 calc(var(--r,110px) - var(--e,40px)),
+                              black calc(var(--r,110px) + var(--e,40px)));
+               mask: radial-gradient(circle at var(--tx,50%) var(--ty,50%),
+                              transparent 0 calc(var(--r,110px) - var(--e,40px)),
+                              black calc(var(--r,110px) + var(--e,40px)));"></div>
+      </div>
+      <div id="scotoma" class="scotoma overlay" style="display:none;"></div>
+      <div id="glare"   class="glare   overlay" style="display:none;"></div>
+
+      <!-- 体験コンテンツ -->
+      <div id="contentWrap" class="surface-inner">
+        <article class="grid">
+          <h2>サンプルページ</h2>
+          <p>
+            今日はとても暑い日でした。運動場では熱中症指数が高く、外遊びが中止になりました。
+            その代わりに、教室で読み聞かせやグループ活動を行いました。
+            <a href="#" onclick="event.preventDefault()">こちらのお知らせ</a>もご確認ください。
+          </p>
+
+          <div class="grid grid-2">
+            <div class="card">
+              <h3 style="margin-top:0">入力フォーム</h3>
+              <label for="q">検索</label>
+              <input id="q" type="search" placeholder="例：図書当番" />
+              <div style="height:8px"></div>
+              <label for="name">名前</label>
+              <input id="name" type="text" placeholder="山田 太郎" />
+              <div style="height:8px"></div>
+              <button class="btn primary" type="button">送信</button>
+            </div>
+            <div class="card">
+              <h3 style="margin-top:0">色の区別テスト</h3>
+              <div class="swatches">
+                <div class="sw" style="background:#e53935">赤</div>
+                <div class="sw" style="background:#43a047">緑</div>
+                <div class="sw" style="background:#fdd835">黄</div>
+                <div class="sw" style="background:#c0ca33">黄緑</div>
+                <div class="sw" style="background:#1e88e5">青</div>
+                <div class="sw" style="background:#8e24aa">紫</div>
+              </div>
+              <div class="mini">色だけでなく <b>形やラベル</b>でも伝える設計が大切。</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-top:0">表（可読性チェック）</h3>
+            <table>
+              <thead><tr><th>時間</th><th>活動</th><th>場所</th></tr></thead>
+              <tbody>
+                <tr><td>8:45</td><td>朝の会</td><td>教室</td></tr>
+                <tr><td>10:30</td><td>理科：観察</td><td>理科室</td></tr>
+                <tr><td>12:20</td><td>給食</td><td>教室</td></tr>
+                <tr><td>13:50</td><td>図工：作品づくり</td><td>図工室</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+  /* ===== Tabs ===== */
+  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+  const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
+  tabs.forEach((tab,i)=>{
+    tab.tabIndex = i===0 ? 0 : -1;
+    tab.addEventListener('click',()=>activate(tab));
+    tab.addEventListener('keydown',e=>{
+      const i = tabs.indexOf(tab);
+      if(e.key==='ArrowRight'){ e.preventDefault(); activate(tabs[(i+1)%tabs.length], true); }
+      if(e.key==='ArrowLeft'){ e.preventDefault(); activate(tabs[(i-1+tabs.length)%tabs.length], true); }
+      if(e.key==='Home'){ e.preventDefault(); activate(tabs[0], true); }
+      if(e.key==='End'){ e.preventDefault(); activate(tabs[tabs.length-1], true); }
+    });
+  });
+  function activate(tab, focus=false){
+    tabs.forEach(t=>{
+      const selected = t===tab;
+      t.setAttribute('aria-selected', String(selected));
+      t.tabIndex = selected ? 0 : -1;
+    });
+    panels.forEach(p=>{
+      const isTarget = p.id === tab.getAttribute('aria-controls');
+      p.setAttribute('aria-hidden', String(!isTarget));
+      p.toggleAttribute('hidden', !isTarget);
+    });
+    if(focus) tab.focus();
+    currentMode = tab.id.replace('t-','');
+    updateModeLayers();
+  }
+
+  /* ===== Elements & State ===== */
+  const surface = document.querySelector('.surface');
+  const contentWrap = document.getElementById('contentWrap');
+  const glare = document.getElementById('glare');
+  const maskLayer = document.getElementById('maskLayer');
+  const scotoma = document.getElementById('scotoma');
+  const maskBox = document.getElementById('tunnelMaskBox');
+
+  const blur = document.getElementById('blur');
+  const contrast = document.getElementById('contrast');
+  const bright = document.getElementById('bright');
+  const radius = document.getElementById('radius');
+  const edge = document.getElementById('edge');
+  const fixTunnel = document.getElementById('fix-tunnel');
+  const gveil = document.getElementById('gveil');
+  const galpha = document.getElementById('galpha');
+  const fixGlare = document.getElementById('fix-glare');
+
+  // CVD radios
+  const cvdOrder = ['none','protan','deutan','tritan'];
+  const cvdMapId  = {none:'cvd-none', protan:'cvd-prot', deutan:'cvd-deut', tritan:'cvd-trit'};
+  const cvdRadios = {
+    none:   document.getElementById('cvdbtn-none'),
+    protan: document.getElementById('cvd-protan'),
+    deutan: document.getElementById('cvd-deutan'),
+    tritan: document.getElementById('cvd-tritan'),
+  };
+  const cvdTypeLabel = document.getElementById('cvdTypeLabel');
+  const previewSim = document.getElementById('previewSim');
+
+  const nyOn = document.getElementById('ny-on');
+  const motionToggleBtn = document.getElementById('motion-toggle');
+
+  let currentMode = 'normal';
+  let currentCvd = 'none';
+  const savedScrollBehavior = getComputedStyle(document.documentElement).scrollBehavior || '';
+
+  /* ===== Helpers ===== */
+  function setInnerFilter(v){ contentWrap.style.filter = v || 'none'; }
+
+  function setCvd(type, moveFocus=false){
+    currentCvd = type;
+    for (const [k,btn] of Object.entries(cvdRadios)){
+      const checked = (k===type);
+      if(!btn) continue;
+      btn.setAttribute('aria-checked', String(checked));
+      btn.tabIndex = checked ? 0 : -1;
+      if(checked && moveFocus) btn.focus();
+    }
+    updateColor();
+  }
+
+  function renderPreviewSim(){
+    if(!previewSim) return;
+    const labelMap = {none:'標準', protan:'P（赤）', deutan:'D（緑）', tritan:'T（青）'};
+    previewSim.innerHTML = '';
+    ['#e53935','#43a047','#fdd835','#c0ca33','#1e88e5','#8e24aa'].forEach((col,i)=>{
+      const names = ['赤','緑','黄','黄緑','青','紫'];
+      const d = document.createElement('div');
+      d.className = 'sw';
+      d.textContent = names[i];
+      d.style.background = col;
+      d.style.filter = `url(#${cvdMapId[currentCvd]})`;
+      previewSim.appendChild(d);
+    });
+    cvdTypeLabel.textContent = labelMap[currentCvd];
+  }
+
+  /* ===== Mode updaters ===== */
+  function updateBlur(){
+    const f = `blur(${blur?.value || 0}px) contrast(${contrast?.value || 100}%) brightness(${bright?.value || 100}%)`;
+    setInnerFilter(f);
+  }
+  function updateTunnel(){
+    const on = (currentMode==='tunnel');
+    maskLayer.style.display = on ? 'block' : 'none';
+    const r = Number(radius?.value || 110);
+    const e = Number(edge?.value || 120);
+    maskBox.style.setProperty('--r', r + 'px');
+    maskBox.style.setProperty('--e', (e/3) + 'px');
+
+    if(fixTunnel?.checked){
+      maskBox.style.setProperty('--tx', '50%');
+      maskBox.style.setProperty('--ty', '50%');
+    }
+  }
+  function updateGlare(){
+    glare.style.display = (currentMode==='glare') ? 'block' : 'none';
+    glare.style.setProperty('--gveil', ((gveil?.value||0)/100).toString());
+    glare.style.setProperty('--galpha', ((galpha?.value||0)/100).toString());
+    if(fixGlare?.checked){ glare.style.setProperty('--gx', '50%'); glare.style.setProperty('--gy', '8%'); }
+  }
+  function updateColor(){
+    surface.style.filter = `url(#${cvdMapId[currentCvd]})`;
+    glare.style.display = 'none';
+    maskLayer.style.display = 'none';
+    scotoma.style.display = 'none';
+    renderPreviewSim();
+  }
+  function updateNyst(){ document.body.classList.toggle('nystagmus', currentMode==='nyst' && nyOn?.checked); }
+
+  function updateModeLayers(){
+    // リセット
+    surface.style.filter = 'none';
+    setInnerFilter('none');
+    glare.style.display = 'none';
+    maskLayer.style.display = 'none';
+    scotoma.style.display = 'none';
+    document.body.classList.remove('nystagmus');
+
+    if(currentMode==='blur')   updateBlur();
+    if(currentMode==='tunnel') updateTunnel();
+    if(currentMode==='glare')  updateGlare();
+    if(currentMode==='color')  updateColor();
+    if(currentMode==='nyst')   updateNyst();
+  }
+
+  /* ===== Bindings ===== */
+  [blur,contrast,bright].forEach?.(el=>el?.addEventListener('input', ()=>{ if(currentMode==='blur') updateBlur(); }));
+  [radius,edge,fixTunnel].forEach?.(el=>el?.addEventListener('input', ()=>{ if(currentMode==='tunnel') updateTunnel(); }));
+  [gveil,galpha,fixGlare].forEach?.(el=>el?.addEventListener('input', ()=>{ if(currentMode==='glare') updateGlare(); }));
+
+  // radiogroup：クリック／スペース／Enter／矢印
+  const cvdNodes = cvdOrder.map(t=>cvdRadios[t]).filter(Boolean);
+  cvdNodes.forEach((btn, idx)=>{
+    const type = cvdOrder[idx];
+    btn.addEventListener('click', ()=> setCvd(type, false));
+    btn.addEventListener('keydown', e=>{
+      if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); setCvd(type, false); }
+      if(e.key==='ArrowRight' || e.key==='ArrowDown'){
+        e.preventDefault(); const next = cvdOrder[(idx+1)%cvdOrder.length]; setCvd(next, true);
+      }
+      if(e.key==='ArrowLeft' || e.key==='ArrowUp'){
+        e.preventDefault(); const prev = cvdOrder[(idx-1+cvdOrder.length)%cvdOrder.length]; setCvd(prev, true);
+      }
+    });
+  });
+
+  // 光源＆視点の追従
+  const surfaceEl = document.querySelector('.surface');
+  surfaceEl.addEventListener('pointermove', e=>{
+    const rect = surfaceEl.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left)/rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top)/rect.height));
+    glare.style.setProperty('--gx', (x*100)+'%');
+    glare.style.setProperty('--gy', (y*100)+'%');
+    if(!fixTunnel?.checked){
+      maskBox.style.setProperty('--tx', (x*100)+'%');
+      maskBox.style.setProperty('--ty', (y*100)+'%');
+    }
+  });
+
+  // 動き停止/再開トグル（scroll-behavior復元）
+  motionToggleBtn?.addEventListener('click', ()=>{
+    const pressed = motionToggleBtn.getAttribute('aria-pressed') === 'true';
+    if(!pressed){
+      document.body.classList.remove('nystagmus');
+      if(nyOn) nyOn.checked = false;
+      document.documentElement.style.setProperty('scroll-behavior','auto');
+      motionToggleBtn.textContent = '動きを再開';
+      motionToggleBtn.setAttribute('aria-pressed','true');
+    }else{
+      document.documentElement.style.setProperty('scroll-behavior', savedScrollBehavior || '');
+      if(currentMode==='nyst' && nyOn?.checked){ document.body.classList.add('nystagmus'); }
+      motionToggleBtn.textContent = '動きをすべて停止';
+      motionToggleBtn.setAttribute('aria-pressed','false');
+    }
+  });
+
+  /* ===== Init ===== */
+  (function init(){
+    // 初期タブ・モード
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(nyOn) nyOn.checked = !prefersReduced; // R-M の場合は既定でオフ
+    setCvd('none');
+    updateModeLayers();
+  })();
+</script>
+</body>
+</html>
