@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>見え方体験シミュレーター（P/D/T切替・色の見え方 仕上げ版）</title>
+<title>見え方体験シミュレーター（P/D/T切替・色の見え方 安定版）</title>
 <style>
   :root{ --fg:#111; --bg:#fff; --acc:#0059ff; --card:#f6f7f9; --border:#dcdfe4; }
   *{box-sizing:border-box}
@@ -31,14 +31,13 @@
   .btn{appearance:none;border:1px solid var(--border);background:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
   .btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
 
-  /* Color mode radios */
+  /* Color mode buttons */
   .cvd-group{display:flex;gap:8px;flex-wrap:wrap}
-  .cvd-radio{
+  .cvd-btn{
     width:auto; min-width:3ch; padding:8px 10px; border:1px solid var(--border); border-radius:10px;
     background:#fff; cursor:pointer; font:inherit
   }
-  .cvd-radio[aria-checked="true"]{background:var(--acc);color:#fff;border-color:var(--acc)}
-  .cvd-radio:focus{outline:2px solid #0003; outline-offset:2px}
+  .cvd-btn[aria-pressed="true"]{background:var(--acc);color:#fff;border-color:var(--acc)}
 
   /* Surface */
   .surface{
@@ -130,12 +129,12 @@
       <div id="p-color" class="panel" role="tabpanel" aria-labelledby="t-color" aria-hidden="true" hidden>
         <div class="control">
           <label id="cvd-label">色の見え方（簡易）</label>
-          <div class="cvd-group" role="radiogroup" aria-labelledby="cvd-label">
-            <!-- ★ radiogroup化（ロービングtabindex） -->
-            <button class="cvd-radio" id="cvdbtn-none"   type="button" role="radio" aria-checked="true"  tabindex="0">標準</button>
-            <button class="cvd-radio" id="cvd-protan" type="button" role="radio" aria-checked="false" tabindex="-1" title="P: 赤の感度低下">P</button>
-            <button class="cvd-radio" id="cvd-deutan" type="button" role="radio" aria-checked="false" tabindex="-1" title="D: 緑の感度低下">D</button>
-            <button class="cvd-radio" id="cvd-tritan" type="button" role="radio" aria-checked="false" tabindex="-1" title="T: 青の感度低下">T</button>
+          <div class="cvd-group" role="group" aria-labelledby="cvd-label">
+            <!-- ★ ID重複回避のためボタン側IDを cvdbtn-* に変更 -->
+            <button class="cvd-btn" id="cvdbtn-none"   type="button" aria-pressed="true">標準</button>
+            <button class="cvd-btn" id="cvd-protan" type="button" aria-pressed="false" title="P: 赤の感度低下">P</button>
+            <button class="cvd-btn" id="cvd-deutan" type="button" aria-pressed="false" title="D: 緑の感度低下">D</button>
+            <button class="cvd-btn" id="cvd-tritan" type="button" aria-pressed="false" title="T: 青の感度低下">T</button>
           </div>
         </div>
 
@@ -163,11 +162,11 @@
       </div>
 
       <div id="p-nyst" class="panel" role="tabpanel" aria-labelledby="t-nyst" aria-hidden="true" hidden>
-        <div class="control"><label><input id="ny-on" type="checkbox" /> 微振動を有効化</label></div>
+        <div class="control"><label><input id="ny-on" type="checkbox" checked /> 微振動を有効化</label></div>
       </div>
 
       <hr style="margin:12px 0;border:none;border-top:1px solid var(--border)">
-      <div class="control"><button id="motion-toggle" class="btn" type="button" aria-pressed="false">動きをすべて停止</button></div>
+      <div class="control"><button id="stop-motion" class="btn" type="button">動きをすべて停止</button></div>
     </section>
 
     <!-- 実際の体験領域 -->
@@ -175,6 +174,7 @@
       <!-- SVG defs：色覚フィルタ -->
       <svg width="0" height="0" aria-hidden="true" focusable="false">
         <defs>
+          <!-- （注）filter側のidはそのまま。ボタン側のみ変更済み -->
           <filter id="cvd-none"></filter>
           <!-- P: protan近似 -->
           <filter id="cvd-prot" color-interpolation-filters="sRGB">
@@ -204,7 +204,7 @@
       </svg>
 
       <!-- Overlays（最前面） -->
-      <!-- ★ トンネル視：CSSマスク（縁ぼかし可変） -->
+      <!-- ★ トンネル視はCSSマスクに変更（縁ぼかし可変） -->
       <div id="maskLayer" class="overlay" style="display:none;">
         <div id="tunnelMaskBox"
              style="position:absolute;inset:0;background:rgba(0,0,0,0.92);
@@ -276,7 +276,7 @@
   const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
   const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
   tabs.forEach((tab,i)=>{
-    tab.tabIndex = i===0 ? 0 : -1;
+    tab.tabIndex = i===0 ? 0 : -1; // ★アクセシビリティ：フォーカス管理
     tab.addEventListener('click',()=>activate(tab));
     tab.addEventListener('keydown',e=>{
       const i = tabs.indexOf(tab);
@@ -293,9 +293,9 @@
       t.tabIndex = selected ? 0 : -1;
     });
     panels.forEach(p=>{
-      const isTarget = p.id === tab.getAttribute('aria-controls');
+      const isTarget = p.id === tab.getAttribute('aria-controls'); // ★#なしで比較
       p.setAttribute('aria-hidden', String(!isTarget));
-      p.toggleAttribute('hidden', !isTarget);
+      p.toggleAttribute('hidden', !isTarget); // CSSと同期
     });
     if(focus) tab.focus();
     currentMode = tab.id.replace('t-','');
@@ -320,10 +320,8 @@
   const galpha = document.getElementById('galpha');
   const fixGlare = document.getElementById('fix-glare');
 
-  // CVD radios
-  const cvdOrder = ['none','protan','deutan','tritan'];
-  const cvdMapId  = {none:'cvd-none', protan:'cvd-prot', deutan:'cvd-deut', tritan:'cvd-trit'};
-  const cvdRadios = {
+  // CVD buttons（★ボタン側IDをcvdbtn-noneに変更済み）
+  const cvdBtns = {
     none:   document.getElementById('cvdbtn-none'),
     protan: document.getElementById('cvd-protan'),
     deutan: document.getElementById('cvd-deutan'),
@@ -333,29 +331,26 @@
   const previewSim = document.getElementById('previewSim');
 
   const nyOn = document.getElementById('ny-on');
-  const motionToggleBtn = document.getElementById('motion-toggle');
+  const stopMotionBtn = document.getElementById('stop-motion');
 
   let currentMode = 'normal';
   let currentCvd = 'none';
-  const savedScrollBehavior = getComputedStyle(document.documentElement).scrollBehavior || '';
+  const initialScrollBehavior = getComputedStyle(document.documentElement).scrollBehavior || '';
 
   /* ===== Helpers ===== */
   function setInnerFilter(v){ contentWrap.style.filter = v || 'none'; }
 
-  function setCvd(type, moveFocus=false){
+  function setCvd(type){
     currentCvd = type;
-    for (const [k,btn] of Object.entries(cvdRadios)){
-      const checked = (k===type);
-      if(!btn) continue;
-      btn.setAttribute('aria-checked', String(checked));
-      btn.tabIndex = checked ? 0 : -1;
-      if(checked && moveFocus) btn.focus();
+    for (const [k,btn] of Object.entries(cvdBtns)){
+      btn && btn.setAttribute('aria-pressed', String(k===type));
     }
     updateColor();
   }
 
   function renderPreviewSim(){
     if(!previewSim) return;
+    const map = { none:'url(#cvd-none)', protan:'url(#cvd-prot)', deutan:'url(#cvd-deut)', tritan:'url(#cvd-trit)' };
     const labelMap = {none:'標準', protan:'P（赤）', deutan:'D（緑）', tritan:'T（青）'};
     previewSim.innerHTML = '';
     ['#e53935','#43a047','#fdd835','#c0ca33','#1e88e5','#8e24aa'].forEach((col,i)=>{
@@ -364,7 +359,7 @@
       d.className = 'sw';
       d.textContent = names[i];
       d.style.background = col;
-      d.style.filter = `url(#${cvdMapId[currentCvd]})`;
+      d.style.filter = map[currentCvd]; // 個別に適用
       previewSim.appendChild(d);
     });
     cvdTypeLabel.textContent = labelMap[currentCvd];
@@ -381,8 +376,10 @@
     const r = Number(radius?.value || 110);
     const e = Number(edge?.value || 120);
     maskBox.style.setProperty('--r', r + 'px');
-    maskBox.style.setProperty('--e', (e/3) + 'px');
+    maskBox.style.setProperty('--e', (e/3) + 'px'); // 実用域に調整
 
+    // 中央固定
+    const rect = surface.getBoundingClientRect();
     if(fixTunnel?.checked){
       maskBox.style.setProperty('--tx', '50%');
       maskBox.style.setProperty('--ty', '50%');
@@ -395,10 +392,15 @@
     if(fixGlare?.checked){ glare.style.setProperty('--gx', '50%'); glare.style.setProperty('--gy', '8%'); }
   }
   function updateColor(){
-    surface.style.filter = `url(#${cvdMapId[currentCvd]})`;
+    // 色モードは .surface 全体に適用
+    const map = { none:'url(#cvd-none)', protan:'url(#cvd-prot)', deutan:'url(#cvd-deut)', tritan:'url(#cvd-trit)' };
+    surface.style.filter = map[currentCvd];
+
+    // 他レイヤーはOFF
     glare.style.display = 'none';
     maskLayer.style.display = 'none';
     scotoma.style.display = 'none';
+
     renderPreviewSim();
   }
   function updateNyst(){ document.body.classList.toggle('nystagmus', currentMode==='nyst' && nyOn?.checked); }
@@ -424,19 +426,11 @@
   [radius,edge,fixTunnel].forEach?.(el=>el?.addEventListener('input', ()=>{ if(currentMode==='tunnel') updateTunnel(); }));
   [gveil,galpha,fixGlare].forEach?.(el=>el?.addEventListener('input', ()=>{ if(currentMode==='glare') updateGlare(); }));
 
-  // radiogroup：クリック／スペース／Enter／矢印
-  const cvdNodes = cvdOrder.map(t=>cvdRadios[t]).filter(Boolean);
-  cvdNodes.forEach((btn, idx)=>{
-    const type = cvdOrder[idx];
-    btn.addEventListener('click', ()=> setCvd(type, false));
-    btn.addEventListener('keydown', e=>{
-      if(e.key===' ' || e.key==='Enter'){ e.preventDefault(); setCvd(type, false); }
-      if(e.key==='ArrowRight' || e.key==='ArrowDown'){
-        e.preventDefault(); const next = cvdOrder[(idx+1)%cvdOrder.length]; setCvd(next, true);
-      }
-      if(e.key==='ArrowLeft' || e.key==='ArrowUp'){
-        e.preventDefault(); const prev = cvdOrder[(idx-1+cvdOrder.length)%cvdOrder.length]; setCvd(prev, true);
-      }
+  // P/D/T/標準ボタン
+  Object.entries(cvdBtns).forEach(([type,btn])=>{
+    btn?.addEventListener('click', ()=>{ setCvd(type); });
+    btn?.addEventListener('keydown', e=>{
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); setCvd(type); }
     });
   });
 
@@ -454,28 +448,15 @@
     }
   });
 
-  // 動き停止/再開トグル（scroll-behavior復元）
-  motionToggleBtn?.addEventListener('click', ()=>{
-    const pressed = motionToggleBtn.getAttribute('aria-pressed') === 'true';
-    if(!pressed){
-      document.body.classList.remove('nystagmus');
-      if(nyOn) nyOn.checked = false;
-      document.documentElement.style.setProperty('scroll-behavior','auto');
-      motionToggleBtn.textContent = '動きを再開';
-      motionToggleBtn.setAttribute('aria-pressed','true');
-    }else{
-      document.documentElement.style.setProperty('scroll-behavior', savedScrollBehavior || '');
-      if(currentMode==='nyst' && nyOn?.checked){ document.body.classList.add('nystagmus'); }
-      motionToggleBtn.textContent = '動きをすべて停止';
-      motionToggleBtn.setAttribute('aria-pressed','false');
-    }
+  document.getElementById('stop-motion')?.addEventListener('click', ()=>{
+    document.body.classList.remove('nystagmus');
+    if(nyOn) nyOn.checked = false;
+    document.documentElement.style.setProperty('scroll-behavior','auto'); // 必要なら initialScrollBehavior に戻す実装も可
   });
 
   /* ===== Init ===== */
   (function init(){
-    // 初期タブ・モード
-    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if(nyOn) nyOn.checked = !prefersReduced; // R-M の場合は既定でオフ
+    // 初期は標準
     setCvd('none');
     updateModeLayers();
   })();
