@@ -44,7 +44,7 @@
     position:relative; isolation:isolate; overflow:hidden;
     border:1px solid var(--border); border-radius:14px; background:#fff; padding:18px; min-height:380px;
   }
-  .surface-inner{ position:relative; z-index:1; transform:translateZ(0) } /* blur等はJS管理 */
+  .surface-inner{ position:relative; z-index:1; transform:translateZ(0) }
 
   /* Sample UI */
   .grid{display:grid;gap:12px}
@@ -130,7 +130,6 @@
         <div class="control">
           <label id="cvd-label">色の見え方（簡易）</label>
           <div class="cvd-group" role="group" aria-labelledby="cvd-label">
-            <!-- ★ ID重複回避のためボタン側IDを cvdbtn-* に変更 -->
             <button class="cvd-btn" id="cvdbtn-none"   type="button" aria-pressed="true">標準</button>
             <button class="cvd-btn" id="cvd-protan" type="button" aria-pressed="false" title="P: 赤の感度低下">P</button>
             <button class="cvd-btn" id="cvd-deutan" type="button" aria-pressed="false" title="D: 緑の感度低下">D</button>
@@ -172,9 +171,8 @@
     <!-- 実際の体験領域 -->
     <section class="surface" aria-live="polite">
       <!-- SVG defs：色覚フィルタ -->
-      <svg width="0" height="0" aria-hidden="true" focusable="false">
+      <svg width="0" height="0" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- （注）filter側のidはそのまま。ボタン側のみ変更済み -->
           <filter id="cvd-none"></filter>
           <!-- P: protan近似 -->
           <filter id="cvd-prot" color-interpolation-filters="sRGB">
@@ -204,7 +202,6 @@
       </svg>
 
       <!-- Overlays（最前面） -->
-      <!-- ★ トンネル視はCSSマスクに変更（縁ぼかし可変） -->
       <div id="maskLayer" class="overlay" style="display:none;">
         <div id="tunnelMaskBox"
              style="position:absolute;inset:0;background:rgba(0,0,0,0.92);
@@ -272,11 +269,20 @@
 </main>
 
 <script>
+  /* ===== Utilities (Safari対応) ===== */
+  function applyFilter(el, val){
+    if(!el) return;
+    const v = val || 'none';
+    el.style.filter = v;
+    el.style.webkitFilter = v; // Safari/iOS
+  }
+  function clearFilter(el){ applyFilter(el, 'none'); }
+
   /* ===== Tabs ===== */
   const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
   const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
   tabs.forEach((tab,i)=>{
-    tab.tabIndex = i===0 ? 0 : -1; // ★アクセシビリティ：フォーカス管理
+    tab.tabIndex = i===0 ? 0 : -1;
     tab.addEventListener('click',()=>activate(tab));
     tab.addEventListener('keydown',e=>{
       const i = tabs.indexOf(tab);
@@ -293,9 +299,9 @@
       t.tabIndex = selected ? 0 : -1;
     });
     panels.forEach(p=>{
-      const isTarget = p.id === tab.getAttribute('aria-controls'); // ★#なしで比較
+      const isTarget = p.id === tab.getAttribute('aria-controls');
       p.setAttribute('aria-hidden', String(!isTarget));
-      p.toggleAttribute('hidden', !isTarget); // CSSと同期
+      p.toggleAttribute('hidden', !isTarget);
     });
     if(focus) tab.focus();
     currentMode = tab.id.replace('t-','');
@@ -320,7 +326,6 @@
   const galpha = document.getElementById('galpha');
   const fixGlare = document.getElementById('fix-glare');
 
-  // CVD buttons（★ボタン側IDをcvdbtn-noneに変更済み）
   const cvdBtns = {
     none:   document.getElementById('cvdbtn-none'),
     protan: document.getElementById('cvd-protan'),
@@ -338,7 +343,7 @@
   const initialScrollBehavior = getComputedStyle(document.documentElement).scrollBehavior || '';
 
   /* ===== Helpers ===== */
-  function setInnerFilter(v){ contentWrap.style.filter = v || 'none'; }
+  function setInnerFilter(v){ applyFilter(contentWrap, v); }
 
   function setCvd(type){
     currentCvd = type;
@@ -350,16 +355,17 @@
 
   function renderPreviewSim(){
     if(!previewSim) return;
-    const map = { none:'url(#cvd-none)', protan:'url(#cvd-prot)', deutan:'url(#cvd-deut)', tritan:'url(#cvd-trit)' };
+    const map = { none:'none', protan:"url('#cvd-prot')", deutan:"url('#cvd-deut')", tritan:"url('#cvd-trit')" };
     const labelMap = {none:'標準', protan:'P（赤）', deutan:'D（緑）', tritan:'T（青）'};
     previewSim.innerHTML = '';
-    ['#e53935','#43a047','#fdd835','#c0ca33','#1e88e5','#8e24aa'].forEach((col,i)=>{
-      const names = ['赤','緑','黄','黄緑','青','紫'];
+    const colors = ['#e53935','#43a047','#fdd835','#c0ca33','#1e88e5','#8e24aa'];
+    const names  = ['赤','緑','黄','黄緑','青','紫'];
+    colors.forEach((col,i)=>{
       const d = document.createElement('div');
       d.className = 'sw';
       d.textContent = names[i];
       d.style.background = col;
-      d.style.filter = map[currentCvd]; // 個別に適用
+      applyFilter(d, map[currentCvd]); // Safari対応
       previewSim.appendChild(d);
     });
     cvdTypeLabel.textContent = labelMap[currentCvd];
@@ -378,8 +384,6 @@
     maskBox.style.setProperty('--r', r + 'px');
     maskBox.style.setProperty('--e', (e/3) + 'px'); // 実用域に調整
 
-    // 中央固定
-    const rect = surface.getBoundingClientRect();
     if(fixTunnel?.checked){
       maskBox.style.setProperty('--tx', '50%');
       maskBox.style.setProperty('--ty', '50%');
@@ -392,9 +396,9 @@
     if(fixGlare?.checked){ glare.style.setProperty('--gx', '50%'); glare.style.setProperty('--gy', '8%'); }
   }
   function updateColor(){
-    // 色モードは .surface 全体に適用
-    const map = { none:'url(#cvd-none)', protan:'url(#cvd-prot)', deutan:'url(#cvd-deut)', tritan:'url(#cvd-trit)' };
-    surface.style.filter = map[currentCvd];
+    const map = { none:'none', protan:"url('#cvd-prot')", deutan:"url('#cvd-deut')", tritan:"url('#cvd-trit')" };
+    // 色モードは contentWrap に適用（surface ではなく）
+    applyFilter(contentWrap, map[currentCvd]);
 
     // 他レイヤーはOFF
     glare.style.display = 'none';
@@ -406,9 +410,9 @@
   function updateNyst(){ document.body.classList.toggle('nystagmus', currentMode==='nyst' && nyOn?.checked); }
 
   function updateModeLayers(){
-    // リセット
-    surface.style.filter = 'none';
-    setInnerFilter('none');
+    // リセット（両方クリアしておくと安全）
+    clearFilter(contentWrap);
+    clearFilter(surface);
     glare.style.display = 'none';
     maskLayer.style.display = 'none';
     scotoma.style.display = 'none';
@@ -451,12 +455,11 @@
   document.getElementById('stop-motion')?.addEventListener('click', ()=>{
     document.body.classList.remove('nystagmus');
     if(nyOn) nyOn.checked = false;
-    document.documentElement.style.setProperty('scroll-behavior','auto'); // 必要なら initialScrollBehavior に戻す実装も可
+    document.documentElement.style.setProperty('scroll-behavior','auto');
   });
 
   /* ===== Init ===== */
   (function init(){
-    // 初期は標準
     setCvd('none');
     updateModeLayers();
   })();
